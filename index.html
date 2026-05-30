@@ -801,6 +801,7 @@ table tfoot td { padding: 7px 10px; color: #fff; font-size: 11px; font-weight: 7
       <div class="user-chip">
         <div class="user-avatar" id="topbar-avatar">AD</div>
         <span class="user-name" id="topbar-username">Admin</span>
+        <span id="topbar-role-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.04em"></span>
       </div>
       <button class="btn btn-outline btn-sm" onclick="navigate('shortcuts')" style="font-size:11px" title="Keyboard Shortcuts">?</button>
       <button class="btn btn-outline btn-sm" onclick="initSystem()" style="font-size:11px">⚡ Init</button>
@@ -821,8 +822,40 @@ table tfoot td { padding: 7px 10px; color: #fff; font-size: 11px; font-weight: 7
 // =============================================
 const auth = {
   user: null,
-  isAdmin: function() { return auth.user && auth.user.role === 'ADMIN'; },
-  isLoggedIn: function() { return !!auth.user; }
+  isAdmin:      function() { return auth.user && auth.user.role === 'ADMIN'; },
+  isLoggedIn:   function() { return !!auth.user; },
+  // Department role helpers
+  canOperations:function() { return auth.user && ['ADMIN','OPERATIONS'].includes(auth.user.role); },
+  canAccounts:  function() { return auth.user && ['ADMIN','ACCOUNTS'].includes(auth.user.role); },
+  canReports:   function() { return auth.user && ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'].includes(auth.user.role); },
+  canMasters:   function() { return auth.user && ['ADMIN','OPERATIONS'].includes(auth.user.role); },
+  // Page-level access check
+  canAccess: function(page) {
+    if (!auth.user) return false;
+    const role = auth.user.role;
+    if (role === 'ADMIN') return true;
+    const map = {
+      dashboard: ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
+      sales:     ['ADMIN','OPERATIONS'],
+      operations:['ADMIN','OPERATIONS'],
+      dispatch:  ['ADMIN','OPERATIONS'],
+      mf:        ['ADMIN','OPERATIONS','ACCOUNTS'],
+      unloading: ['ADMIN','OPERATIONS'],
+      profit:    ['ADMIN','OPERATIONS','ACCOUNTS'],
+      account:   ['ADMIN','ACCOUNTS'],
+      pipeline:  ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
+      'eway-alerts':['ADMIN','OPERATIONS','REPORTS'],
+      report:    ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
+      'party-ledger':['ADMIN','ACCOUNTS','REPORTS'],
+      'monthly-pl':  ['ADMIN','ACCOUNTS','REPORTS'],
+      'broker-outstanding':['ADMIN','ACCOUNTS','REPORTS'],
+      masters:   ['ADMIN','OPERATIONS'],
+      import:    ['ADMIN'],
+      usermgmt:  ['ADMIN'],
+      shortcuts: ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS']
+    };
+    return (map[page] || []).includes(role);
+  }
 };
 
 // =============================================
@@ -869,6 +902,11 @@ function navigate(page) {
 }
 
 function renderPage(page) {
+  // Role-based access check
+  if (!auth.canAccess(page)) {
+    setContent('<div style="text-align:center;padding:60px 20px"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:6px">Access Restricted</div><div style="font-size:12px;color:var(--ink3)">Your account role (<strong>' + (auth.user?auth.user.role:'') + '</strong>) does not have permission to view this page.</div><button class="btn btn-outline btn-sm" style="margin-top:16px" onclick="navigate(\'dashboard\')">⌂ Back to Dashboard</button></div>');
+    return;
+  }
   const pages = {
     dashboard:           renderDashboard,
     sales:               renderSales,
@@ -956,8 +994,8 @@ function fmtNum(n) { return Number(n||0).toLocaleString('en-IN'); }
 // SUPABASE CONFIG — Replace with your project credentials
 // Get these from: supabase.com → Project → Settings → API
 // ═══════════════════════════════════════════════════════════
-const SUPABASE_URL  = 'https://wrxvuvrtwxnuurwsvogf.supabase.co';
-const SUPABASE_ANON = 'sb_publishable_f4zVOtDkPr4YZrXZhCyCzg_lQN_DU8v';
+const SUPABASE_URL  = 'https://lxwtqqqrccniypdyevzz.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_TCmTgpNCJs0k5gZvkWidRA_4UensBwU';
 
 // ── Low-level Supabase REST helper ──────────────────────────
 async function sb(table, method, body, query) {
@@ -1086,9 +1124,9 @@ const SB = {
     let soNumber = '';
     if (d.Converted === 'YES') {
       const rows = await sb('so_master', 'GET', null, '?so_number=not.is.null&order=so_number.desc&limit=1');
-      const last = rows[0]?.so_number || 'SFMPL/035/000';
+      const last = rows[0]?.so_number || 'SFMPL/044/000';
       const num = parseInt(last.split('/')[2]||'0') + 1;
-      soNumber = 'SFMPL/035/' + String(num).padStart(3,'0');
+      soNumber = 'SFMPL/044/' + String(num).padStart(3,'0');
     }
     const row = await sb('so_master', 'POST', { so_number: soNumber, party_id: d.Party_ID, from_id: d.From_ID, to_id: d.To_ID, mt, rate_given: pr, given_labour_type: d.Given_Labour_Type, rate_received: lr, rec_labour_type: d.Rec_Labour_Type, loading_charge: lc, effective_given: effParty, effective_rec: effLorry, margin_per_mt: marginMT, total_margin: totalMargin, converted: d.Converted, status: d.Status||'ACTIVE', remarks: d.Remarks||'', allocated: false, documentation_status: false, mf_status: false, unloading_status: false, profit_status: false, created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
     return { success: true, id: row[0]?.id, SO_Number: soNumber };
@@ -1099,9 +1137,9 @@ const SB = {
       const rows = await sb('so_master', 'GET', null, '?id=eq.' + d.SO_ID);
       if (rows[0] && !rows[0].so_number) {
         const latest = await sb('so_master', 'GET', null, '?so_number=not.is.null&order=so_number.desc&limit=1');
-        const last = latest[0]?.so_number || 'SFMPL/035/000';
+        const last = latest[0]?.so_number || 'SFMPL/044/000';
         const num = parseInt(last.split('/')[2]||'0') + 1;
-        updates.so_number = 'SFMPL/035/' + String(num).padStart(3,'0');
+        updates.so_number = 'SFMPL/044/' + String(num).padStart(3,'0');
       }
     }
     await sb('so_master', 'PATCH', updates, '?id=eq.' + d.SO_ID);
@@ -1161,7 +1199,7 @@ const SB = {
     const totalExp = ll+food+con+unl+xerox+det+ep+oc;
     const extraLabour = parseFloat(d.Extra_Labour)||0, totalCost = freightMF+totalExp+extraLabour;
     const billPmt = parseFloat(d.Bill_Pmt)||0, biltiFrt = billPmt*finalMT;
-    await sb('mf_master', 'POST', { mf_no: d.MF_No, so_id: d.SO_ID, so_number: d.SO_Number, lorry_no: d.Lorry_No, pmt_rate: pmtRate, final_mt: finalMT, total_freight: totalFreight, other_expense: otherExp, l_m: lm, p_m: pm, freight_mf: freightMF, advance: adv, diesel: diesel, diesel_paid: parseFloat(d.Diesel_Paid)||0, diesel_payment_type: d.Diesel_Payment_Type, diesel_ref: d.Diesel_Ref, diesel_card: d.Diesel_Card, other: other, balance: balance, loading_labour: ll, fooding: food, con: con, unloading: unl, xerox: xerox, detention: det, extra_point: ep, other_chrg: oc, total_exp: totalExp, extra_labour: extraLabour, total_cost: totalCost, bill_pmt: billPmt, bilti_freight: biltiFrt, created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
+    await sb('mf_master', 'POST', { mf_no: d.MF_No, so_id: d.SO_ID, so_number: d.SO_Number, lorry_no: d.Lorry_No, loading_point: d.Loading_Point||'', loading_clerk: d.Loading_Clerk||'', pmt_rate: pmtRate, final_mt: finalMT, total_freight: totalFreight, other_expense: otherExp, l_m: lm, p_m: pm, freight_mf: freightMF, advance: adv, diesel: diesel, diesel_paid: parseFloat(d.Diesel_Paid)||0, diesel_payment_type: d.Diesel_Payment_Type, diesel_ref: d.Diesel_Ref, diesel_card: d.Diesel_Card, other: other, balance: balance, loading_labour: ll, fooding: food, con: con, unloading: unl, xerox: xerox, detention: det, extra_point: ep, other_chrg: oc, total_exp: totalExp, extra_labour: extraLabour, total_cost: totalCost, bill_pmt: billPmt, bilti_freight: biltiFrt, created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
     await sb('so_master', 'PATCH', { mf_status: true }, '?id=eq.' + d.SO_ID);
     return { success: true };
   },
@@ -1193,7 +1231,7 @@ const SB = {
     const grossProfit = bilti-cost-deduct;
     const gpSale = totalRev>0 ? Math.round((totalRev-cost)/totalRev*100) : 0;
     const gpPurchase = cost>0 ? Math.round((grossProfit/cost)*100) : 0;
-    await sb('profit_master', 'POST', { so_id: d.SO_ID, so_number: d.SO_Number, mf_no: d.MF_No, bilti_freight: bilti, extra_chrg: extra, total_revenue: totalRev, total_cost: cost, deduction: deduct, gross_profit: grossProfit, gp_on_sale: gpSale, gp_on_purchase: gpPurchase, created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
+    await sb('profit_master', 'POST', { so_id: d.SO_ID, so_number: d.SO_Number, mf_no: d.MF_No, bilti_freight: bilti, extra_chrg: extra, total_revenue: totalRev, total_cost: cost, deduction: deduct, gross_profit: grossProfit, gp_on_sale: gpSale, gp_on_purchase: gpPurchase, ack_date: d.Ack_Date||null, created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
     await sb('so_master', 'PATCH', { profit_status: true }, '?id=eq.' + d.SO_ID);
     return { success: true };
   },
@@ -1202,12 +1240,16 @@ const SB = {
   async getMFForAccount() {
     const mfRows = await sb('mf_master', 'GET', null, '?order=id.desc');
     const tdRows = await sb('trip_dispatch_master', 'GET', null, '');
+    const acctRows = await sb('account_master', 'GET', null, '?overall_status=eq.COMPLETED&select=mf_no');
+    const completedSet = new Set(acctRows.map(a => String(a.mf_no)));
     const tdMap = {};
     tdRows.forEach(r => { tdMap[String(r.so_id)] = r; });
-    return mfRows.map(mf => {
-      const td = tdMap[String(mf.so_id)] || {};
-      return { MF_ID: mf.mf_no, mf_no: mf.mf_no, SO_Number: mf.so_number, Lorry_No: mf.lorry_no||td.lorry_no||'', Loading_Date: td.loading_date||'', Broker_ID: td.broker_id||'', Adv_Acc_No: td.broker_acc||'', Adv_IFSC: td.broker_ifsc||'', Bal_Acc_No: td.bal_acc||'', Bal_IFSC: td.bal_ifsc||'', Advance: mf.advance||0, Balance: mf.balance||0 };
-    });
+    return mfRows
+      .filter(mf => !completedSet.has(String(mf.mf_no)))
+      .map(mf => {
+        const td = tdMap[String(mf.so_id)] || {};
+        return { MF_ID: mf.mf_no, mf_no: mf.mf_no, SO_Number: mf.so_number, SO_ID: mf.so_id||null, Lorry_No: mf.lorry_no||td.lorry_no||'', Loading_Date: td.loading_date||'', Broker_ID: td.broker_id||'', Adv_Acc_No: td.broker_acc||'', Adv_IFSC: td.broker_ifsc||'', Bal_Acc_No: td.bal_acc||'', Bal_IFSC: td.bal_ifsc||'', Advance: mf.advance||0, Balance: mf.balance||0 };
+      });
   },
   async getAccountByMF(mfNo) {
     const rows = await sb('account_master', 'GET', null, '?mf_no=eq.' + encodeURIComponent(mfNo) + '&limit=1');
@@ -1218,12 +1260,20 @@ const SB = {
     if (existing.length > 0) {
       await sb('account_master', 'PATCH', { adv_paid_amount: d.Adv_Paid_Amount, adv_txn_id: d.Adv_Txn_ID, adv_status: 'ADV_PAID', overall_status: 'BAL_PENDING' }, '?mf_no=eq.' + encodeURIComponent(d.MF_No));
     } else {
-      await sb('account_master', 'POST', { mf_no: d.MF_No, so_id: d.SO_ID||'', so_number: d.SO_Number||'', lorry_no: d.Lorry_No||'', loading_date: d.Loading_Date||null, broker_id: d.Broker_ID||'', broker_name: d.Broker_Name||'', adv_acc_no: d.Adv_Acc_No||'', adv_ifsc: d.Adv_IFSC||'', bal_acc_no: d.Bal_Acc_No||'', bal_ifsc: d.Bal_IFSC||'', advance_amount: d.Advance_Amount||0, balance_amount: d.Balance_Amount||0, adv_paid_amount: d.Adv_Paid_Amount, adv_txn_id: d.Adv_Txn_ID, bal_paid_amount: 0, bal_txn_id: '', adv_status: 'ADV_PAID', bal_status: 'PENDING', overall_status: 'BAL_PENDING', created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
+      await sb('account_master', 'POST', { mf_no: d.MF_No, so_id: d.SO_ID||null, so_number: d.SO_Number||'', lorry_no: d.Lorry_No||'', loading_date: d.Loading_Date||null, broker_id: d.Broker_ID||null, broker_name: d.Broker_Name||'', adv_acc_no: d.Adv_Acc_No||'', adv_ifsc: d.Adv_IFSC||'', bal_acc_no: d.Bal_Acc_No||'', bal_ifsc: d.Bal_IFSC||'', advance_amount: d.Advance_Amount||0, balance_amount: d.Balance_Amount||0, adv_paid_amount: d.Adv_Paid_Amount, adv_txn_id: d.Adv_Txn_ID, bal_paid_amount: 0, bal_txn_id: '', adv_status: 'ADV_PAID', bal_status: 'PENDING', overall_status: 'BAL_PENDING', created_by: d.Created_By||(auth.user?auth.user.username:'admin') });
     }
     return { success: true };
   },
   async saveBalancePayment(d) {
     await sb('account_master', 'PATCH', { bal_paid_amount: d.Bal_Paid_Amount, bal_txn_id: d.Bal_Txn_ID, bal_status: 'BAL_PAID', overall_status: 'COMPLETED', settlement_date: new Date().toISOString() }, '?mf_no=eq.' + encodeURIComponent(d.MF_No));
+    try {
+      let soId = d.SO_ID || null;
+      if (!soId) {
+        const mfRows = await sb('mf_master', 'GET', null, '?mf_no=eq.' + encodeURIComponent(d.MF_No) + '&select=so_id&limit=1');
+        if (mfRows.length > 0) soId = mfRows[0].so_id;
+      }
+      if (soId) await sb('trip_dispatch_master', 'PATCH', { trip_status: 'COMPLETED' }, '?so_id=eq.' + soId);
+    } catch(e) { /* non-critical */ }
     return { success: true };
   },
   async updateBalanceAmount(d) {
@@ -1346,9 +1396,11 @@ const SB = {
         LM: mf.l_m||0, PM: mf.p_m||0, Freight_MF: mf.freight_mf||0,
         Advance: mf.advance||0, Diesel: mf.diesel||0, Balance: mf.balance||0,
         Loading_Labour: mf.loading_labour||0, Fooding: mf.fooding||0, Unloading_Exp: mf.unloading||0,
+        Detention: mf.detention||0, Other_Chrg: mf.other_chrg||0,
+        Loading_Point: mf.loading_point||'', Loading_Clerk: mf.loading_clerk||'',
         Total_Exp: mf.total_exp||0, Total_Cost: mf.total_cost||0, Bill_Pmt: mf.bill_pmt||0, Bilti_Freight: mf.bilti_freight||0,
         Extra_Chrg: pf.extra_chrg||0, Total_Revenue: pf.total_revenue||0, Gross_Profit: pf.gross_profit||0,
-        GP_on_Sale: pf.gp_on_sale||0, GP_on_Purchase: pf.gp_on_purchase||0,
+        GP_on_Sale: pf.gp_on_sale||0, GP_on_Purchase: pf.gp_on_purchase||0, Ack_Date: pf.ack_date||'',
         Allocated: so.allocated||false, Documentation_Status: so.documentation_status||false,
         MF_Status: so.mf_status||false, Unloading_Status: so.unloading_status||false, Profit_Status: so.profit_status||false
       };
@@ -2696,6 +2748,14 @@ async function renderMF() {
           </select>
         </div>
         <div class="form-group">
+          <label>Loading Point</label>
+          <input type="text" id="mf-loading-point" placeholder="e.g. Gate 3, Warehouse B">
+        </div>
+        <div class="form-group">
+          <label>Loading Clerk</label>
+          <input type="text" id="mf-loading-clerk" placeholder="Clerk name">
+        </div>
+        <div class="form-group">
           <label>Lorry No (Auto from Trip)</label>
           <input type="text" id="mf-lorry" class="calc-field" readonly placeholder="Auto from Operations">
         </div>
@@ -2882,6 +2942,7 @@ async function saveMF() {
   const data = {
     MF_No: mfNo,
     SO_ID:soId, SO_Number:soNum, Lorry_No:v('mf-lorry'),
+    Loading_Point:v('mf-loading-point'), Loading_Clerk:v('mf-loading-clerk'),
     PMT_Rate:v('mf-pmt-rate'), Final_MT:v('mf-final-mt'),
     Other_Expense:v('mf-other-exp'), L_M:v('mf-lm'), P_M:v('mf-pm'),
     Advance:v('mf-advance'), Diesel:v('mf-diesel'), Diesel_Paid:v('mf-diesel-paid'),
@@ -3001,7 +3062,7 @@ async function loadUnloadingTracking() {
 let _ulFilteredRows = null;
 
 function renderUnloadingTable(rows, page) {
-  if (rows !== undefined && rows !== null) _ulFilteredRows = rows;
+  if (rows !== undefined && rows !== null && Array.isArray(rows)) _ulFilteredRows = rows;
   const data = _ulFilteredRows || _ulAllRows || [];
   if (page !== undefined) _ulPage = page;
 
@@ -3044,7 +3105,7 @@ function renderUnloadingTable(rows, page) {
   const countInfo = data.length > _UL_PAGE_SIZE
     ? `<span style="font-size:11px;color:var(--ink3);margin-left:12px">Showing ${startIdx+1}–${Math.min(startIdx+_UL_PAGE_SIZE,data.length)} of ${data.length}</span>`
     : '';
-  const paginationHtml = renderPagination(_ulPage, totalPages, 'renderUnloadingTable');
+  const paginationHtml = renderPagination(_ulPage, totalPages, 'goToUnloadingPage');
 
   wrap.innerHTML = `
     <div style="display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
@@ -3065,6 +3126,8 @@ function renderUnloadingTable(rows, page) {
       </table>
     </div>${paginationHtml}`;
 }
+
+function goToUnloadingPage(p) { _ulPage = p; renderUnloadingTable(undefined, p); }
 
 function filterUnloadingList() {
   const search = (document.getElementById('ul-search')?.value || '').toLowerCase();
@@ -3290,6 +3353,10 @@ async function renderProfit() {
           <label>GP on Purchase % (Auto)</label>
           <input type="number" id="pf-gp-purchase" class="calc-field" readonly>
         </div>
+        <div class="form-group">
+          <label>Acknowledgment Date</label>
+          <input type="date" id="pf-ack-date">
+        </div>
       </div>
       <div class="form-actions">
         <button class="btn btn-outline" onclick="renderProfit()">↺ Refresh</button>
@@ -3374,6 +3441,7 @@ async function saveProfit() {
     Extra_Chrg: document.getElementById('pf-extra').value,
     Total_Cost: document.getElementById('pf-total-cost').value,
     Deduction: document.getElementById('pf-deduction').value,
+    Ack_Date: document.getElementById('pf-ack-date').value || null,
     Created_By:(auth.user?auth.user.username:'admin')
   };
   try {
@@ -3984,6 +4052,7 @@ async function renderAccountPaymentEntry() {
             <option value="">-- Select MF No --</option>
             ${mfList.map(m => `<option value="${m.MF_ID}"
               data-so="${m.SO_Number||''}"
+              data-so-id="${m.SO_ID||''}"
               data-lorry="${m.Lorry_No||''}"
               data-date="${m.Loading_Date||''}"
               data-broker-id="${m.Broker_ID||''}"
@@ -4138,7 +4207,7 @@ async function onAccountMFSelect() {
   document.getElementById('bal-required').textContent    = '₹' + fmt(balance);
 
   _acctCurrentMF = {
-    MF_No: mfNo, SO_Number: opt.dataset.so, Lorry_No: opt.dataset.lorry,
+    MF_No: mfNo, SO_Number: opt.dataset.so, SO_ID: opt.dataset.soId||null, Lorry_No: opt.dataset.lorry,
     Loading_Date: opt.dataset.date, Broker_ID: opt.dataset.brokerId,
     Broker_Name: brokerName,
     Adv_Acc_No: opt.dataset.advAcc, Adv_IFSC: opt.dataset.advIfsc,
@@ -4256,7 +4325,7 @@ async function submitAdvancePayment() {
   if (!_acctCurrentMF) { toast('Select an MF No first','error'); return; }
   const amt   = parseFloat(document.getElementById('adv-pay-amount').value);
   const txnId = document.getElementById('adv-txn-id').value.trim();
-  if (!amt || amt <= 0) { toast('Enter advance amount','error'); return; }
+  if (amt === null || isNaN(amt) || amt < 0) { toast('Enter a valid advance amount (0 or more)','error'); return; }
   if (!txnId)           { toast('Enter Transaction ID','error'); return; }
   const btn = document.getElementById('btn-adv-submit');
   btn.disabled = true; btn.textContent = '⏳ Saving...';
@@ -4283,10 +4352,10 @@ async function submitBalancePayment() {
   if (!_acctCurrentMF) { toast('Select an MF No first','error'); return; }
   const amt   = parseFloat(document.getElementById('bal-pay-amount').value);
   const txnId = document.getElementById('bal-txn-id').value.trim();
-  if (!amt || amt <= 0) { toast('Enter balance amount','error'); return; }
+  if (amt === null || isNaN(amt) || amt < 0) { toast('Enter a valid balance amount (0 or more)','error'); return; }
   if (!txnId)           { toast('Enter Transaction ID','error'); return; }
   try {
-    const r = await call('saveBalancePayment', { MF_No: _acctCurrentMF.MF_No, Bal_Paid_Amount: amt, Bal_Txn_ID: txnId });
+    const r = await call('saveBalancePayment', { MF_No: _acctCurrentMF.MF_No, SO_ID: _acctCurrentMF.SO_ID||null, Bal_Paid_Amount: amt, Bal_Txn_ID: txnId });
     if (r && r.success) {
       toast('Balance paid! MF fully settled. ✅');
       document.getElementById('bal-card-status').textContent = '✅ Bal Paid ₹'+fmt(amt);
@@ -4681,7 +4750,7 @@ async function renderReport() {
       <div style="display:grid;grid-template-columns:repeat(4,1fr) repeat(2,160px);gap:10px;align-items:end">
         <div class="form-group">
           <label>SO Number</label>
-          <input type="text" id="rf-so" placeholder="e.g. SFMPL/035/001">
+          <input type="text" id="rf-so" placeholder="e.g. SFMPL/044/001">
         </div>
         <div class="form-group">
           <label>Lorry No</label>
@@ -4829,6 +4898,8 @@ function getRptCols() {
       {l:'L/M',        f:r=>inr(r.LM),           rt:true, money:true},
       {l:'P/M',        f:r=>inr(r.PM),           rt:true, money:true},
       {l:'Freight MF', f:r=>inr(r.Freight_MF),   rt:true, money:true},
+      {l:'Loading Point', f:r=>str(r.Loading_Point)},
+      {l:'Loading Clerk', f:r=>str(r.Loading_Clerk)},
       {l:'MF No',      f:r=>str(r.MF_No),        mono:true}
     ],
     payment: [
@@ -4842,6 +4913,8 @@ function getRptCols() {
       {l:'Load Labour',f:r=>inr(r.Loading_Labour),rt:true,money:true},
       {l:'Fooding',    f:r=>inr(r.Fooding),      rt:true, money:true},
       {l:'Unload Exp', f:r=>inr(r.Unloading_Exp),rt:true,money:true},
+      {l:'Detention',  f:r=>inr(r.Detention),    rt:true, money:true},
+      {l:'Other Chrg', f:r=>inr(r.Other_Chrg),   rt:true, money:true},
       {l:'Total Exp',  f:r=>inr(r.Total_Exp),    rt:true, money:true},
       {l:'Total Cost', f:r=>inr(r.Total_Cost),   rt:true, money:true},
       {l:'Bill PMT',   f:r=>inr(r.Bill_Pmt),     rt:true, money:true}
@@ -4891,7 +4964,8 @@ function getRptCols() {
       {l:'Total Cost',   f:r=>inr(r.Total_Cost), rt:true, money:true},
       {l:'Gross Profit', f:r=>{const v=parseFloat(r.Gross_Profit)||0;return`<span style="color:${v>=0?'var(--green)':'var(--red)'}">₹${v.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>`;}, rt:true},
       {l:'GP on Sale',   f:r=>pct(r.GP_on_Sale), rt:true},
-      {l:'GP on Purch.', f:r=>pct(r.GP_on_Purchase),rt:true}
+      {l:'GP on Purch.', f:r=>pct(r.GP_on_Purchase),rt:true},
+      {l:'Ack. Date',    f:r=>str(r.Ack_Date)}
     ],
     status: [
       {l:'SO No',     f:r=>str(r.SO_Number),  mono:true, amber:true},
@@ -5076,6 +5150,8 @@ async function doLogin() {
     if (auth.isAdmin()) {
       document.getElementById('nav-usermgmt').style.display = 'block';
     }
+    // Apply role-based nav visibility
+    applyNavVisibility();
     document.getElementById('login-screen').style.display = 'none';
 
     await loadMasters().catch(function() {});
@@ -5087,6 +5163,34 @@ async function doLogin() {
   }
 }
 
+function applyNavVisibility() {
+  if (!auth.user) return;
+  const role = auth.user.role;
+  // Map nav item onclick → page key
+  const navPages = [
+    'dashboard','sales','operations','dispatch','mf','unloading','profit',
+    'account','pipeline','eway-alerts','report','party-ledger','monthly-pl',
+    'broker-outstanding','masters','import'
+  ];
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const onclick = el.getAttribute('onclick') || '';
+    const match = onclick.match(/navigate\('([^']+)'\)/);
+    if (match) {
+      const page = match[1];
+      el.style.display = auth.canAccess(page) ? '' : 'none';
+    }
+  });
+  // Show role badge in topbar
+  const roleColors = { ADMIN:'#2563eb', OPERATIONS:'#059669', ACCOUNTS:'#d97706', REPORTS:'#7c3aed' };
+  const roleEl = document.getElementById('topbar-role-badge');
+  if (roleEl) {
+    roleEl.textContent = role;
+    roleEl.style.background = (roleColors[role]||'#6b7280') + '22';
+    roleEl.style.color = roleColors[role]||'#6b7280';
+    roleEl.style.display = 'inline-block';
+  }
+}
+
 function doLogout() {
   try { sessionStorage.removeItem('tms_auth'); } catch(e) {}
   auth.user = null;
@@ -5095,8 +5199,12 @@ function doLogout() {
   document.getElementById('login-password').value = '';
   document.getElementById('login-error').style.display   = 'none';
   document.getElementById('nav-usermgmt').style.display  = 'none';
+  const roleEl = document.getElementById('topbar-role-badge');
+  if (roleEl) roleEl.style.display = 'none';
   document.getElementById('topbar-avatar').textContent   = 'AD';
   document.getElementById('topbar-username').textContent = 'Admin';
+  // Restore all nav items to visible on logout
+  document.querySelectorAll('.nav-item').forEach(el => { el.style.display = ''; });
 }
 
 // =============================================
@@ -5115,9 +5223,9 @@ async function renderUserMgmt() {
   try { users = await SB.getAllUsers(); } catch(e) { toast('Failed to load users: '+e.message,'error'); }
 
   var rows = users.map(function(u, idx) {
-    var roleBadge   = u.role==='ADMIN'
-      ? '<span class="user-role-badge urb-admin">ADMIN</span>'
-      : '<span class="user-role-badge urb-user">USER</span>';
+    var roleColors = { ADMIN:'#2563eb', OPERATIONS:'#059669', ACCOUNTS:'#d97706', REPORTS:'#7c3aed', USER:'#6b7280' };
+    var roleColor = roleColors[u.role] || '#6b7280';
+    var roleBadge = '<span class="user-role-badge" style="background:'+roleColor+'22;color:'+roleColor+';border:1px solid '+roleColor+'44;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px">'+u.role+'</span>';
     var statusBadge = u.status==='ACTIVE'
       ? '<span class="badge b-yes">ACTIVE</span>'
       : '<span class="badge b-no">INACTIVE</span>';
@@ -5147,7 +5255,7 @@ async function renderUserMgmt() {
     +'<div class="form-group"><label>Username *</label><input type="text" id="uf-username" placeholder="e.g. rahul123"></div>'
     +'<div class="form-group"><label>Display Name *</label><input type="text" id="uf-displayname" placeholder="e.g. Rahul Sharma"></div>'
     +'<div class="form-group"><label id="uf-pw-label">Password *</label><input type="password" id="uf-password" placeholder="Enter password"></div>'
-    +'<div class="form-group"><label>Role</label><select id="uf-role"><option value="USER">USER</option><option value="ADMIN">ADMIN</option></select></div>'
+    +'<div class="form-group"><label>Role</label><select id="uf-role"><option value="OPERATIONS">OPERATIONS</option><option value="ACCOUNTS">ACCOUNTS</option><option value="REPORTS">REPORTS</option><option value="ADMIN">ADMIN</option></select></div>'
     +'<div class="form-group"><label>Status</label><select id="uf-status"><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></div>'
     +'</div>'
     +'<div class="form-actions" style="margin-top:12px">'
