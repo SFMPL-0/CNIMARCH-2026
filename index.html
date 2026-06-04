@@ -801,7 +801,7 @@ table tfoot td { padding: 7px 10px; color: #fff; font-size: 11px; font-weight: 7
       <div class="user-chip">
         <div class="user-avatar" id="topbar-avatar">AD</div>
         <span class="user-name" id="topbar-username">Admin</span>
-        <span id="topbar-role-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.04em"></span>
+        <span id="topbar-role-badge" style="display:none"></span>
       </div>
       <button class="btn btn-outline btn-sm" onclick="navigate('shortcuts')" style="font-size:11px" title="Keyboard Shortcuts">?</button>
       <button class="btn btn-outline btn-sm" onclick="initSystem()" style="font-size:11px">⚡ Init</button>
@@ -822,39 +822,32 @@ table tfoot td { padding: 7px 10px; color: #fff; font-size: 11px; font-weight: 7
 // =============================================
 const auth = {
   user: null,
-  isAdmin:      function() { return auth.user && auth.user.role === 'ADMIN'; },
-  isLoggedIn:   function() { return !!auth.user; },
-  // Department role helpers
-  canOperations:function() { return auth.user && ['ADMIN','OPERATIONS'].includes(auth.user.role); },
-  canAccounts:  function() { return auth.user && ['ADMIN','ACCOUNTS'].includes(auth.user.role); },
-  canReports:   function() { return auth.user && ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'].includes(auth.user.role); },
-  canMasters:   function() { return auth.user && ['ADMIN','OPERATIONS'].includes(auth.user.role); },
-  // Page-level access check
+  isAdmin:       function() { return auth.user && auth.user.role === 'ADMIN'; },
+  isLoggedIn:    function() { return !!auth.user; },
   canAccess: function(page) {
     if (!auth.user) return false;
-    const role = auth.user.role;
-    if (role === 'ADMIN') return true;
+    if (auth.user.role === 'ADMIN') return true;
     const map = {
-      dashboard: ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
-      sales:     ['ADMIN','OPERATIONS'],
-      operations:['ADMIN','OPERATIONS'],
-      dispatch:  ['ADMIN','OPERATIONS'],
-      mf:        ['ADMIN','OPERATIONS','ACCOUNTS'],
-      unloading: ['ADMIN','OPERATIONS'],
-      profit:    ['ADMIN','OPERATIONS','ACCOUNTS'],
-      account:   ['ADMIN','ACCOUNTS'],
-      pipeline:  ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
-      'eway-alerts':['ADMIN','OPERATIONS','REPORTS'],
-      report:    ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
-      'party-ledger':['ADMIN','ACCOUNTS','REPORTS'],
-      'monthly-pl':  ['ADMIN','ACCOUNTS','REPORTS'],
+      dashboard:          ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
+      sales:              ['ADMIN','OPERATIONS'],
+      operations:         ['ADMIN','OPERATIONS'],
+      dispatch:           ['ADMIN','OPERATIONS'],
+      mf:                 ['ADMIN','OPERATIONS','ACCOUNTS'],
+      unloading:          ['ADMIN','OPERATIONS'],
+      profit:             ['ADMIN','OPERATIONS','ACCOUNTS'],
+      account:            ['ADMIN','ACCOUNTS'],
+      pipeline:           ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
+      'eway-alerts':      ['ADMIN','OPERATIONS','REPORTS'],
+      report:             ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS'],
+      'party-ledger':     ['ADMIN','ACCOUNTS','REPORTS'],
+      'monthly-pl':       ['ADMIN','ACCOUNTS','REPORTS'],
       'broker-outstanding':['ADMIN','ACCOUNTS','REPORTS'],
-      masters:   ['ADMIN','OPERATIONS'],
-      import:    ['ADMIN'],
-      usermgmt:  ['ADMIN'],
-      shortcuts: ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS']
+      masters:            ['ADMIN','OPERATIONS'],
+      import:             ['ADMIN'],
+      usermgmt:           ['ADMIN'],
+      shortcuts:          ['ADMIN','OPERATIONS','ACCOUNTS','REPORTS']
     };
-    return (map[page] || []).includes(role);
+    return (map[page] || []).includes(auth.user.role);
   }
 };
 
@@ -903,8 +896,10 @@ function navigate(page) {
 
 function renderPage(page) {
   // Role-based access check
-  if (!auth.canAccess(page)) {
-    setContent('<div style="text-align:center;padding:60px 20px"><div style="font-size:32px;margin-bottom:12px">🔒</div><div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:6px">Access Restricted</div><div style="font-size:12px;color:var(--ink3)">Your account role (<strong>' + (auth.user?auth.user.role:'') + '</strong>) does not have permission to view this page.</div><button class="btn btn-outline btn-sm" style="margin-top:16px" onclick="navigate(\'dashboard\')">⌂ Back to Dashboard</button></div>');
+  if (auth.user && !auth.canAccess(page)) {
+    const roleColors = { ADMIN:'#2563eb', OPERATIONS:'#059669', ACCOUNTS:'#d97706', REPORTS:'#7c3aed' };
+    const col = roleColors[auth.user.role] || '#6b7280';
+    setContent(`<div style="text-align:center;padding:80px 20px"><div style="font-size:40px;margin-bottom:12px">🔒</div><div style="font-size:15px;font-weight:700;color:var(--red);margin-bottom:8px">Access Restricted</div><div style="font-size:12px;color:var(--ink3);margin-bottom:20px">Your role <b style="color:${col}">${auth.user.role}</b> does not have permission for this page.</div><button class="btn btn-outline btn-sm" onclick="navigate('dashboard')">⌂ Dashboard</button></div>`);
     return;
   }
   const pages = {
@@ -984,6 +979,36 @@ function toast(msg, type='success') {
   setTimeout(() => el.remove(), 3500);
 }
 
+// ── SUCCESS CONFIRMATION MODAL ──────────────────────────────
+// Shows a confirmation popup after each save with key details.
+// Usage: showSuccess('Title', [['Label','Value'], ...])
+function showSuccess(title, lines) {
+  const old = document.getElementById('_success_modal');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = '_success_modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:3000;display:flex;align-items:center;justify-content:center';
+  const rows = (Array.isArray(lines) ? lines : []).map(l =>
+    `<div style="display:flex;justify-content:space-between;gap:20px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+       <span style="color:var(--ink3);white-space:nowrap">${l[0]}</span>
+       <span style="font-weight:700;color:var(--ink1);text-align:right">${l[1]}</span>
+     </div>`).join('');
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:10px;padding:28px 26px 20px;width:420px;max-width:94vw;box-shadow:0 24px 64px rgba(0,0,0,.2)">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:40px;height:40px;border-radius:50%;background:#d1fae5;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">✅</div>
+        <div style="font-size:15px;font-weight:700;color:var(--ink1)">${title}</div>
+      </div>
+      ${rows ? `<div style="background:var(--surface);border-radius:6px;padding:10px 12px;margin-bottom:18px;display:flex;flex-direction:column;gap:0">${rows}</div>` : ''}
+      <div style="text-align:right">
+        <button onclick="document.getElementById('_success_modal').remove()" class="btn btn-primary" style="min-width:90px;font-size:13px">OK ✓</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => { const m = document.getElementById('_success_modal'); if(m) m.remove(); }, 10000);
+}
+
 function fmt(n) {
   return Number(n||0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
@@ -1042,6 +1067,41 @@ const SB = {
     await sb('user_master','DELETE',null,'?id=eq.'+id);
     return {success:true};
   },
+  async deleteParty(id)     { await sb('party_master','DELETE',null,'?id=eq.'+id); return {success:true}; },
+  async deletePlace(id)     { await sb('place_master','DELETE',null,'?id=eq.'+id); return {success:true}; },
+  async deleteBroker(id)    { await sb('broker_master','DELETE',null,'?id=eq.'+id); return {success:true}; },
+  async deleteSO(id)        { await sb('so_master','DELETE',null,'?id=eq.'+id); return {success:true}; },
+  async deleteMF(mfNo)      { await sb('mf_master','DELETE',null,'?mf_no=eq.'+encodeURIComponent(mfNo)); return {success:true}; },
+  // ── UPDATE (EDIT) METHODS ──────────────────────────────
+  async updateParty(d)  { await sb('party_master','PATCH',{party_name:d.Party_Name,contact:d.Contact||'',gst:d.GST||'',status:d.Status||'ACTIVE'},'?id=eq.'+d.Party_ID); return {success:true}; },
+  async updatePlace(d)  { await sb('place_master','PATCH',{place_name:d.Place_Name,state_code:d.State_Code||''},'?id=eq.'+d.Place_ID); return {success:true}; },
+  async updateBroker(d) { await sb('broker_master','PATCH',{broker_name:d.Broker_Name,contact_no:d.Contact_No||'',primary_acc_no:d.Primary_Acc_No||'',ifsc:d.IFSC||'',secondary_acc_no:d.Secondary_Acc_No||'',secondary_ifsc:d.Secondary_IFSC||'',status:d.Status||'ACTIVE'},'?id=eq.'+d.Broker_ID); return {success:true}; },
+  async updateTrip(d)   { await sb('trip_dispatch_master','PATCH',{lorry_no:d.Lorry_No,consignor:d.Consignor,consignee:d.Consignee,destination:d.Destination,broker_contact:d.Broker_Contact,driver_contact:d.Driver_Contact},'?so_id=eq.'+d.SO_ID); return {success:true}; },
+  async updateDispatch(d){ await sb('trip_dispatch_master','PATCH',{loading_date:d.Loading_Date,gc_no:d.GC_No,invoice_no:d.Invoice_No,eway_bill_no:d.Eway_Bill_No,eway_expiry:d.Eway_Expiry||null,destination_gc:d.Destination_GC,items:d.Items,pkgs:d.PKGS,articles:d.Articles,final_mt:d.Final_MT},'?so_id=eq.'+d.SO_ID); return {success:true}; },
+  async updateMF(d) {
+    const finalMT=parseFloat(d.Final_MT)||0, pmtRate=parseFloat(d.PMT_Rate)||0, totalFreight=finalMT*pmtRate;
+    const lm=parseFloat(d.L_M)||0, pm=parseFloat(d.P_M)||0, otherExp=parseFloat(d.Other_Expense)||0;
+    const freightMF=totalFreight-lm-pm+otherExp;
+    const adv=parseFloat(d.Advance)||0, diesel=parseFloat(d.Diesel)||0, other=parseFloat(d.Other)||0;
+    const balance=freightMF-adv-diesel+other;
+    const ll=parseFloat(d.Loading_Labour)||0,food=parseFloat(d.Fooding)||0,con=parseFloat(d.Con)||0,unl=parseFloat(d.Unloading)||0,xerox=parseFloat(d.Xerox)||0,det=parseFloat(d.Detention)||0,ep=parseFloat(d.Extra_Point)||0,oc=parseFloat(d.Other_Chrg)||0;
+    const totalExp=ll+food+con+unl+xerox+det+ep+oc, extraLabour=parseFloat(d.Extra_Labour)||0, totalCost=freightMF+totalExp+extraLabour;
+    const billPmt=parseFloat(d.Bill_Pmt)||0, biltiFrt=billPmt*finalMT;
+    await sb('mf_master','PATCH',{lorry_no:d.Lorry_No,loading_point:d.Loading_Point||'',loading_clerk:d.Loading_Clerk||'',pmt_rate:pmtRate,final_mt:finalMT,total_freight:totalFreight,other_expense:otherExp,l_m:lm,p_m:pm,freight_mf:freightMF,advance:adv,diesel:diesel,diesel_paid:parseFloat(d.Diesel_Paid)||0,diesel_payment_type:d.Diesel_Payment_Type,diesel_ref:d.Diesel_Ref,diesel_card:d.Diesel_Card,other:other,balance:balance,loading_labour:ll,fooding:food,con:con,unloading:unl,xerox:xerox,detention:det,extra_point:ep,other_chrg:oc,total_exp:totalExp,extra_labour:extraLabour,total_cost:totalCost,bill_pmt:billPmt,bilti_freight:biltiFrt},'?mf_no=eq.'+encodeURIComponent(d.MF_No));
+    return {success:true};
+  },
+  async updateProfit(d) {
+    const bilti=parseFloat(d.Bilti_Freight)||0, extra=parseFloat(d.Extra_Chrg)||0, totalRev=bilti+extra;
+    const cost=parseFloat(d.Total_Cost)||0, deduct=parseFloat(d.Deduction)||0;
+    const grossProfit=totalRev-cost-deduct;
+    const gpSale=totalRev>0?parseFloat((grossProfit/totalRev*100).toFixed(2)):0;
+    const gpPurchase=cost>0?parseFloat((grossProfit/cost*100).toFixed(2)):0;
+    await sb('profit_master','PATCH',{bilti_freight:bilti,extra_chrg:extra,total_revenue:totalRev,total_cost:cost,deduction:deduct,gross_profit:grossProfit,gp_on_sale:gpSale,gp_on_purchase:gpPurchase,ack_date:d.Ack_Date||null},'?so_id=eq.'+d.SO_ID);
+    return {success:true};
+  },
+  async deleteUnloading(id) { await sb('unloading_master','DELETE',null,'?id=eq.'+id); return {success:true}; },
+  async deleteProfit(id)    { await sb('profit_master','DELETE',null,'?id=eq.'+id); return {success:true}; },
+  async deleteAcct(mfNo)    { await sb('account_master','DELETE',null,'?mf_no=eq.'+encodeURIComponent(mfNo)); return {success:true}; },
 
   // ── MASTERS ──
   async getPartyMaster() {
@@ -1076,7 +1136,7 @@ const SB = {
   // ── SO ──
   async getSOData(page, filters) {
     page = page || 1;
-    let query = '?order=created_at.desc&limit=50&offset=' + ((page-1)*50);
+    let query = '?order=created_at.desc&limit=25&offset='+((page-1)*25);
     if (filters) {
       if (filters.Converted)                     query += '&converted=eq.' + filters.Converted;
       if (filters.Allocated !== undefined)       query += '&allocated=eq.' + (filters.Allocated==='true'||filters.Allocated===true?'true':'false');
@@ -1163,7 +1223,7 @@ const SB = {
       headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
     });
     const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
-    const rows = await sb('trip_dispatch_master', 'GET', null, '?order=id.desc&limit=50&offset='+((page-1)*50));
+    const rows = await sb('trip_dispatch_master', 'GET', null, '?order=id.desc&limit=25&offset='+((page-1)*25));
     return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, Trip_Status: r.trip_status })), total, page };
   },
   async saveDispatchData(d) {
@@ -1183,7 +1243,7 @@ const SB = {
       headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
     });
     const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
-    const rows = await sb('trip_dispatch_master', 'GET', null, '?dispatch_status=eq.DISPATCHED&order=id.desc&limit=50&offset='+((page-1)*50));
+    const rows = await sb('trip_dispatch_master', 'GET', null, '?dispatch_status=eq.DISPATCHED&order=id.desc&limit=25&offset='+((page-1)*25));
     return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, GC_No: r.gc_no, Eway_Bill_No: r.eway_bill_no, Final_MT: r.final_mt, PKGS: r.pkgs, Items: r.items })), total, page };
   },
 
@@ -1209,8 +1269,26 @@ const SB = {
       headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Prefer': 'count=exact', 'Range': '0-0' }
     });
     const total = parseInt(countRes.headers.get('content-range')?.split('/')[1] || '0');
-    const rows = await sb('mf_master', 'GET', null, '?order=id.desc&limit=50&offset='+((page-1)*50));
-    return { data: rows.map(r => ({ ...r, SO_Number: r.so_number, Lorry_No: r.lorry_no, Total_Freight: r.total_freight, Total_Cost: r.total_cost, Bilti_Freight: r.bilti_freight })), total, page };
+    const rows = await sb('mf_master', 'GET', null, '?order=id.desc&limit=25&offset='+((page-1)*25));
+    return {
+      data: rows.map(r => ({
+        ...r,
+        MF_No: r.mf_no, SO_Number: r.so_number, Lorry_No: r.lorry_no,
+        Loading_Point: r.loading_point||'', Loading_Clerk: r.loading_clerk||'',
+        PMT_Rate: r.pmt_rate, Final_MT: r.final_mt,
+        Total_Freight: r.total_freight, Freight_MF: r.freight_mf,
+        LM: r.l_m, PM: r.p_m, Other_Expense: r.other_expense,
+        Advance: r.advance, Diesel: r.diesel, Diesel_Paid: r.diesel_paid,
+        Diesel_Payment_Type: r.diesel_payment_type, Diesel_Ref: r.diesel_ref, Diesel_Card: r.diesel_card,
+        Other: r.other, Balance: r.balance,
+        Loading_Labour: r.loading_labour, Fooding: r.fooding, Con: r.con,
+        Unloading: r.unloading, Xerox: r.xerox, Detention: r.detention,
+        Extra_Point: r.extra_point, Other_Chrg: r.other_chrg, Extra_Labour: r.extra_labour,
+        Total_Exp: r.total_exp, Total_Cost: r.total_cost,
+        Bill_Pmt: r.bill_pmt, Bilti_Freight: r.bilti_freight
+      })),
+      total, page
+    };
   },
   async getMFBySO(soId) {
     const rows = await sb('mf_master', 'GET', null, '?so_id=eq.' + soId + '&limit=1');
@@ -1268,12 +1346,9 @@ const SB = {
     await sb('account_master', 'PATCH', { bal_paid_amount: d.Bal_Paid_Amount, bal_txn_id: d.Bal_Txn_ID, bal_status: 'BAL_PAID', overall_status: 'COMPLETED', settlement_date: new Date().toISOString() }, '?mf_no=eq.' + encodeURIComponent(d.MF_No));
     try {
       let soId = d.SO_ID || null;
-      if (!soId) {
-        const mfRows = await sb('mf_master', 'GET', null, '?mf_no=eq.' + encodeURIComponent(d.MF_No) + '&select=so_id&limit=1');
-        if (mfRows.length > 0) soId = mfRows[0].so_id;
-      }
-      if (soId) await sb('trip_dispatch_master', 'PATCH', { trip_status: 'COMPLETED' }, '?so_id=eq.' + soId);
-    } catch(e) { /* non-critical */ }
+      if (!soId) { const r2 = await sb('mf_master','GET',null,'?mf_no=eq.'+encodeURIComponent(d.MF_No)+'&select=so_id&limit=1'); if(r2.length) soId=r2[0].so_id; }
+      if (soId) await sb('trip_dispatch_master','PATCH',{trip_status:'COMPLETED'},'?so_id=eq.'+soId);
+    } catch(e) {}
     return { success: true };
   },
   async updateBalanceAmount(d) {
@@ -1395,12 +1470,14 @@ const SB = {
         MF_No: mf.mf_no||'', PMT_Rate: mf.pmt_rate||0, Total_Freight: mf.total_freight||0,
         LM: mf.l_m||0, PM: mf.p_m||0, Freight_MF: mf.freight_mf||0,
         Advance: mf.advance||0, Diesel: mf.diesel||0, Balance: mf.balance||0,
-        Loading_Labour: mf.loading_labour||0, Fooding: mf.fooding||0, Unloading_Exp: mf.unloading||0,
-        Detention: mf.detention||0, Other_Chrg: mf.other_chrg||0,
-        Loading_Point: mf.loading_point||'', Loading_Clerk: mf.loading_clerk||'',
+        Loading_Labour: mf.loading_labour||0, Fooding: mf.fooding||0,
+        Con: mf.con||0, Unloading_Exp: mf.unloading||0,
+        Xerox: mf.xerox||0, Detention: mf.detention||0,
+        Extra_Point: mf.extra_point||0, Other_Chrg: mf.other_chrg||0,
+        Extra_Labour: mf.extra_labour||0,
         Total_Exp: mf.total_exp||0, Total_Cost: mf.total_cost||0, Bill_Pmt: mf.bill_pmt||0, Bilti_Freight: mf.bilti_freight||0,
         Extra_Chrg: pf.extra_chrg||0, Total_Revenue: pf.total_revenue||0, Gross_Profit: pf.gross_profit||0,
-        GP_on_Sale: pf.gp_on_sale||0, GP_on_Purchase: pf.gp_on_purchase||0, Ack_Date: pf.ack_date||'',
+        GP_on_Sale: pf.gp_on_sale||0, GP_on_Purchase: pf.gp_on_purchase||0,
         Allocated: so.allocated||false, Documentation_Status: so.documentation_status||false,
         MF_Status: so.mf_status||false, Unloading_Status: so.unloading_status||false, Profit_Status: so.profit_status||false
       };
@@ -2104,6 +2181,12 @@ async function saveSO() {
     const result = await call('saveSOData', data);
     if (result && result.success) {
       toast(result.SO_Number ? `✅ SO Saved! No: ${result.SO_Number}` : converted==='PENDING' ? '⏳ SO Saved as PENDING' : '💾 SO Saved');
+      showSuccess('Sales Order Saved', [
+        ['SO Number', result.SO_Number || '(Auto-assigned)'],
+        ['Party', document.getElementById('so-party')?.selectedOptions[0]?.text || ''],
+        ['MT', document.getElementById('so-mt')?.value || ''],
+        ['Status', converted]
+      ]);
       clearSOForm();
       const wrap = document.getElementById('so-list-wrap');
       if (wrap && !wrap.classList.contains('hidden')) await loadSOTable(1);
@@ -2115,6 +2198,20 @@ async function toggleSOList() {
   const wrap = document.getElementById('so-list-wrap');
   wrap.classList.toggle('hidden');
   if (!wrap.classList.contains('hidden')) await loadSOTable(1);
+}
+
+function confirmDeleteSO(soId, soNum) {
+  confirmDelete(
+    `Delete SO: "${soNum || soId}"`,
+    'This will permanently delete this Sales Order and all linked records (Trip, Dispatch, MF, Unloading, Profit). This cannot be undone.',
+    async function() {
+      try {
+        await call('deleteSO', parseInt(soId));
+        toast('SO deleted ✓');
+        await loadSOTable(1);
+      } catch(e) { toast('Delete failed: '+e,'error'); }
+    }
+  );
 }
 
 async function loadSOTable(page) {
@@ -2139,7 +2236,7 @@ async function loadSOTable(page) {
     const result  = (raw && typeof raw === 'object') ? raw : {};
     const data    = Array.isArray(result.data) ? result.data : [];
     const total   = typeof result.total === 'number' ? result.total : data.length;
-    const totalPages = Math.max(1, Math.ceil(total / 50));
+    const totalPages = Math.max(1, Math.ceil(total / 25));
 
     const convBadge = v => {
       const val = String(v || '').toUpperCase();
@@ -2181,11 +2278,12 @@ async function loadSOTable(page) {
           <td>${convBadge(r.Converted)}</td>
           <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink3);font-size:12px" title="${safeRemarks}">${r.Remarks || '<span style="color:#ddd">—</span>'}</td>
           <td style="font-size:12px;color:var(--ink3)">${dateStr}</td>
-          <td>
+          <td style="display:flex;gap:4px;align-items:center">
             <button class="btn btn-outline btn-sm"
               onclick="openSOEdit('${r.SO_ID}','${String(r.Converted||'PENDING')}','${String(r.Status||'ACTIVE')}','${safeRemarks}','${r.SO_Number||''}','${safePartyEsc}')">
               ✏️ Edit
             </button>
+            ${auth.isAdmin() ? `<button class="btn btn-sm" style="background:var(--red-lt);color:var(--red);border:1px solid var(--red);padding:4px 8px;font-size:11px;border-radius:3px;cursor:pointer" onclick="confirmDeleteSO('${r.SO_ID}','${r.SO_Number||''}')">🗑</button>` : ''}
           </td>
         </tr>`;
     }).join('');
@@ -2444,7 +2542,16 @@ async function saveTrip() {
   };
   try {
     const r = await call('saveTripData', data);
-    if (r.success) { toast('Trip saved! SO marked as Allocated.'); renderOperations(); }
+    if (r.success) {
+      toast('Trip saved! SO marked as Allocated.');
+      showSuccess('Trip Saved', [
+        ['SO Number', document.getElementById('ops-so-select')?.selectedOptions[0]?.text || ''],
+        ['Lorry No', document.getElementById('ops-lorry')?.value || ''],
+        ['Broker', document.getElementById('ops-broker')?.selectedOptions[0]?.text || ''],
+        ['Status', 'Allocated ✓']
+      ]);
+      renderOperations();
+    }
   } catch(e) { toast('Save failed: '+e,'error'); }
 }
 
@@ -2455,7 +2562,7 @@ async function loadTripTable(page) {
   container.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
   const result = await call('getTripData', page);
   const {data, total} = result || {data:[], total:0};
-  const totalPages = Math.ceil(total/50);
+  const totalPages = Math.max(1, Math.ceil(total/25));
   const rows = (data||[]).map(r => `
     <tr>
       <td class="mono">${r.SO_Number}</td>
@@ -2463,14 +2570,48 @@ async function loadTripTable(page) {
       <td>${r.Consignor||'–'}</td>
       <td>${r.Consignee||'–'}</td>
       <td><span class="badge b-run">${r.Trip_Status}</span></td>
+      <td><button class="btn btn-outline btn-sm" onclick="editTrip(${r.SO_ID},'${(r.SO_Number||'').replace(/'/g,'\\\'') }','${(r.Lorry_No||'').replace(/'/g,'\\\'') }','${(r.Consignor||'').replace(/'/g,'\\\'') }','${(r.Consignee||'').replace(/'/g,'\\\'') }','${(r.Broker_Contact||'').replace(/'/g,'\\\'') }','${(r.Driver_Contact||'').replace(/'/g,'\\\'') }')">✏️ Edit</button></td>
     </tr>
   `).join('');
   container.innerHTML = `
     <div class="table-wrap">
-      <table><thead><tr><th>SO No</th><th>Lorry No</th><th>Consignor</th><th>Consignee</th><th>Status</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan="5" class="loading">No trips</td></tr>'}</tbody></table>
+      <table><thead><tr><th>SO No</th><th>Lorry No</th><th>Consignor</th><th>Consignee</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="6" class="loading">No trips</td></tr>'}</tbody></table>
     </div>${renderPagination(page, totalPages, 'loadTripTable')}
   `;
+}
+
+function editTrip(soId, soNum, lorryNo, consignor, consignee, brokerContact, driverContact) {
+  openEditModal('Edit Trip: ' + soNum, [
+    {id:'SO_Number',      label:'SO Number',      value:soNum,         readonly:true},
+    {id:'Lorry_No',       label:'Lorry No',       value:lorryNo},
+    {id:'Consignor',      label:'Consignor',      value:consignor},
+    {id:'Consignee',      label:'Consignee',      value:consignee},
+    {id:'Broker_Contact', label:'Broker Contact', value:brokerContact},
+    {id:'Driver_Contact', label:'Driver Contact', value:driverContact}
+  ], async function(vals) {
+    await call('updateTrip', {...vals, SO_ID: soId});
+    await loadTripTable(1);
+  });
+}
+
+function editDispatch(r) {
+  openEditModal('Edit Dispatch: ' + (r.SO_Number||''), [
+    {id:'SO_Number',    label:'SO Number',     value:r.SO_Number||'',    readonly:true},
+    {id:'Loading_Date', label:'Loading Date',  value:r.Loading_Date||'', type:'date'},
+    {id:'GC_No',        label:'GC No',         value:r.GC_No||''},
+    {id:'Invoice_No',   label:'Invoice No',    value:r.Invoice_No||''},
+    {id:'Eway_Bill_No', label:'E-Way Bill No', value:r.Eway_Bill_No||''},
+    {id:'Eway_Expiry',  label:'E-Way Expiry',  value:r.Eway_Expiry||'',  type:'date'},
+    {id:'Destination_GC',label:'Destination',  value:r.Destination||r.Destination_GC||''},
+    {id:'Items',        label:'Items',         value:r.Items||''},
+    {id:'PKGS',         label:'PKGS',          value:r.PKGS||''},
+    {id:'Articles',     label:'Articles',      value:r.Articles||'',    type:'number'},
+    {id:'Final_MT',     label:'Final MT',      value:r.Final_MT||'',    type:'number'}
+  ], async function(vals) {
+    await call('updateDispatch', {...vals, SO_ID: r.SO_ID||r.so_id});
+    renderDispatch();
+  });
 }
 
 // =============================================
@@ -2691,7 +2832,17 @@ async function saveDispatch() {
   };
   try {
     const r = await call('saveDispatchData', data);
-    if (r && r.success) { toast('✅ Dispatch saved! Documentation status updated.'); renderDispatch(); }
+    if (r && r.success) {
+      toast('✅ Dispatch saved! Documentation status updated.');
+      showSuccess('Dispatch Saved', [
+        ['GC No', document.getElementById('dp-gc-no')?.value || ''],
+        ['Loading Date', document.getElementById('dp-loading-date')?.value || ''],
+        ['E-Way Bill', document.getElementById('dp-eway-no')?.value || ''],
+        ['E-Way Expiry', document.getElementById('dp-eway-expiry')?.value || ''],
+        ['Status', 'Dispatched ✓']
+      ]);
+      renderDispatch();
+    }
   } catch(e) { toast('Save failed: '+e,'error'); }
 }
 
@@ -2748,16 +2899,16 @@ async function renderMF() {
           </select>
         </div>
         <div class="form-group">
+          <label>Lorry No (Auto from Trip)</label>
+          <input type="text" id="mf-lorry" class="calc-field" readonly placeholder="Auto from Operations">
+        </div>
+        <div class="form-group">
           <label>Loading Point</label>
           <input type="text" id="mf-loading-point" placeholder="e.g. Gate 3, Warehouse B">
         </div>
         <div class="form-group">
           <label>Loading Clerk</label>
           <input type="text" id="mf-loading-clerk" placeholder="Clerk name">
-        </div>
-        <div class="form-group">
-          <label>Lorry No (Auto from Trip)</label>
-          <input type="text" id="mf-lorry" class="calc-field" readonly placeholder="Auto from Operations">
         </div>
         <div class="form-group">
           <label>PMT Rate (₹/MT) *</label>
@@ -2942,7 +3093,7 @@ async function saveMF() {
   const data = {
     MF_No: mfNo,
     SO_ID:soId, SO_Number:soNum, Lorry_No:v('mf-lorry'),
-    Loading_Point:v('mf-loading-point'), Loading_Clerk:v('mf-loading-clerk'),
+    Loading_Point:v('mf-loading-point')||'', Loading_Clerk:v('mf-loading-clerk')||'',
     PMT_Rate:v('mf-pmt-rate'), Final_MT:v('mf-final-mt'),
     Other_Expense:v('mf-other-exp'), L_M:v('mf-lm'), P_M:v('mf-pm'),
     Advance:v('mf-advance'), Diesel:v('mf-diesel'), Diesel_Paid:v('mf-diesel-paid'),
@@ -2956,7 +3107,17 @@ async function saveMF() {
   };
   try {
     const r = await call('saveMFData', data);
-    if (r && r.success) { toast('✅ MF Account saved! MF No: ' + mfNo); renderMF(); }
+    if (r && r.success) {
+      toast('✅ MF Account saved! MF No: ' + mfNo);
+      showSuccess('MF Account Saved', [
+        ['MF No', mfNo],
+        ['SO Number', document.getElementById('mf-so-select')?.selectedOptions[0]?.text || ''],
+        ['Lorry No', document.getElementById('mf-lorry')?.value || ''],
+        ['Balance', '₹' + (parseFloat(document.getElementById('mf-balance')?.value||0)).toLocaleString('en-IN')],
+        ['Total Cost', '₹' + (parseFloat(document.getElementById('mf-total-cost')?.value||0)).toLocaleString('en-IN')]
+      ]);
+      renderMF();
+    }
   } catch(e) { toast('Save failed: '+e,'error'); }
 }
 
@@ -2967,8 +3128,51 @@ async function loadMFTable(page) {
   container.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
   const result = await call('getMFData', page);
   const {data, total} = result || {data:[], total:0};
-  const rows = (data||[]).map(r => `<tr><td class="mono">${r.SO_Number}</td><td>${r.Lorry_No}</td><td class="text-right mono">₹${fmt(r.Total_Freight)}</td><td class="text-right mono">₹${fmt(r.Total_Cost)}</td><td class="text-right mono">₹${fmt(r.Bilti_Freight)}</td></tr>`).join('');
-  container.innerHTML = `<div class="table-wrap"><table><thead><tr><th>SO No</th><th>Lorry</th><th>Total Freight</th><th>Total Cost</th><th>Bilti Freight</th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="loading">No records</td></tr>'}</tbody></table></div>${renderPagination(page, Math.ceil(total/50), 'loadMFTable')}`;
+  const rows = (data||[]).map(r => `<tr>
+    <td class="mono" style="font-weight:700;color:var(--blue)">${r.MF_No||r.mf_no||'–'}</td>
+    <td class="mono">${r.SO_Number||'–'}</td>
+    <td>${r.Lorry_No||'–'}</td>
+    <td style="font-size:11px;color:var(--ink3)">${r.Loading_Point||'–'}</td>
+    <td class="text-right mono">₹${fmt(r.Total_Freight)}</td>
+    <td class="text-right mono">₹${fmt(r.Total_Cost)}</td>
+    <td class="text-right mono">₹${fmt(r.Bilti_Freight)}</td>
+    <td><button class="btn btn-outline btn-sm" onclick="editMFRecord(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ Edit</button></td>
+  </tr>`).join('');
+  container.innerHTML = `<div class="table-wrap"><table><thead><tr>
+    <th>MF No</th><th>SO No</th><th>Lorry</th><th>Loading Point</th><th>Total Freight</th><th>Total Cost</th><th>Bilti Frt</th><th>Action</th>
+  </tr></thead><tbody>${rows||'<tr><td colspan="8" class="loading">No records</td></tr>'}</tbody></table></div>
+  ${renderPagination(page, Math.max(1,Math.ceil(total/25)), 'loadMFTable')}`;
+}
+
+function editMFRecord(r) {
+  openEditModal('Edit MF: ' + (r.MF_No||''), [
+    {id:'MF_No',          label:'MF No',          value:r.MF_No||'',          readonly:true},
+    {id:'Lorry_No',       label:'Lorry No',        value:r.Lorry_No||''},
+    {id:'Loading_Point',  label:'Loading Point',   value:r.Loading_Point||''},
+    {id:'Loading_Clerk',  label:'Loading Clerk',   value:r.Loading_Clerk||''},
+    {id:'PMT_Rate',       label:'PMT Rate (₹/MT)', value:r.PMT_Rate||0,        type:'number'},
+    {id:'Final_MT',       label:'Final MT',        value:r.Final_MT||0,        type:'number'},
+    {id:'Other_Expense',  label:'Other Expense',   value:r.Other_Expense||0,   type:'number'},
+    {id:'L_M',            label:'L/M',             value:r.LM||r.L_M||0,       type:'number'},
+    {id:'P_M',            label:'P/M',             value:r.PM||r.P_M||0,       type:'number'},
+    {id:'Advance',        label:'Advance',         value:r.Advance||0,         type:'number'},
+    {id:'Diesel',         label:'Diesel',          value:r.Diesel||0,          type:'number'},
+    {id:'Diesel_Paid',    label:'Diesel Paid',     value:r.Diesel_Paid||0,     type:'number'},
+    {id:'Other',          label:'Other',           value:r.Other||0,           type:'number'},
+    {id:'Loading_Labour', label:'Loading Labour',  value:r.Loading_Labour||0,  type:'number'},
+    {id:'Fooding',        label:'Fooding',         value:r.Fooding||0,         type:'number'},
+    {id:'Con',            label:'Con',             value:r.Con||0,             type:'number'},
+    {id:'Unloading',      label:'Unloading',       value:r.Unloading||0,       type:'number'},
+    {id:'Xerox',          label:'Xerox',           value:r.Xerox||0,           type:'number'},
+    {id:'Detention',      label:'Detention',       value:r.Detention||0,       type:'number'},
+    {id:'Extra_Point',    label:'Extra Point',     value:r.Extra_Point||0,     type:'number'},
+    {id:'Other_Chrg',     label:'Other Chrg',      value:r.Other_Chrg||0,      type:'number'},
+    {id:'Extra_Labour',   label:'Extra Labour',    value:r.Extra_Labour||0,    type:'number'},
+    {id:'Bill_Pmt',       label:'Bill PMT Rate',   value:r.Bill_Pmt||0,        type:'number'}
+  ], async function(vals) {
+    await call('updateMF', {...vals, MF_No: r.MF_No});
+    await loadMFTable(1);
+  });
 }
 
 // =============================================
@@ -3041,12 +3245,18 @@ async function loadUnloadingTracking() {
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><span class="spinner"></span>Loading…</div>';
   try {
-    // Get all SOs that have been through MF (dispatched)
-    const allSOs = await call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', MF_Status:'true'});
+    const [allSOs, ulRecords] = await Promise.all([
+      call('getAllSOsForDropdown', {Converted:'YES', Allocated:'true', MF_Status:'true'}),
+      sb('unloading_master', 'GET', null, '?select=id,so_id&order=id.desc')
+    ]);
+    // Map so_id → unloading_master id for delete button
+    const ulIdMap = {};
+    ulRecords.forEach(r => { ulIdMap[String(r.so_id)] = r.id; });
 
     _ulAllRows = allSOs.map(s => ({
       SO_Number:    s.SO_Number || '–',
       SO_ID:        s.SO_ID,
+      Unload_ID:    ulIdMap[String(s.SO_ID)] || 0,
       Party:        getPartyName(s.Party_ID),
       Route:        getPlaceName(s.From_ID) + ' → ' + getPlaceName(s.To_ID),
       Done:         s.Unloading_Status === true || s.Unloading_Status === 'true' || s.Unloading_Status === 'TRUE'
@@ -3093,12 +3303,15 @@ function renderUnloadingTable(rows, page) {
     const actionBtn = r.Done
       ? `<span style="font-size:11px;color:var(--green);font-weight:600">Done</span>`
       : `<button class="btn btn-primary btn-sm" onclick="quickSelectUnloading('${r.SO_ID}','${r.SO_Number}')">📝 Mark Done</button>`;
+    const delBtn = auth.isAdmin() && r.Done
+      ? `<button class="btn btn-sm" style="background:var(--red-lt);color:var(--red);border:1px solid var(--red);padding:2px 7px;font-size:11px;border-radius:3px;cursor:pointer;margin-left:4px" onclick="confirmDeleteUnloading(${r.Unload_ID||0},'${r.SO_Number}')">🗑</button>`
+      : '';
     return `<tr>
       <td class="mono" style="font-weight:700;color:var(--blue)">${r.SO_Number}</td>
       <td>${r.Party}</td>
       <td style="white-space:nowrap">${r.Route}</td>
       <td>${statusPill}</td>
-      <td>${actionBtn}</td>
+      <td style="display:flex;gap:4px;align-items:center">${actionBtn}${delBtn}</td>
     </tr>`;
   }).join('');
 
@@ -3128,6 +3341,23 @@ function renderUnloadingTable(rows, page) {
 }
 
 function goToUnloadingPage(p) { _ulPage = p; renderUnloadingTable(undefined, p); }
+
+function confirmDeleteUnloading(id, soNum) {
+  confirmDelete(
+    `Delete Unloading Record: "${soNum}"`,
+    'This will remove the unloading record and reset the Unloading Status for this SO back to Pending.',
+    async function() {
+      try {
+        if (id) await call('deleteUnloading', id);
+        // Reset so_master unloading_status back to false
+        const soRows = await sb('so_master','GET',null,'?so_number=eq.'+encodeURIComponent(soNum)+'&select=id&limit=1');
+        if (soRows.length) await sb('so_master','PATCH',{unloading_status:false},'?id=eq.'+soRows[0].id);
+        toast('Unloading record deleted ✓');
+        await loadUnloadingTracking();
+      } catch(e) { toast('Delete failed: '+e,'error'); }
+    }
+  );
+}
 
 function filterUnloadingList() {
   const search = (document.getElementById('ul-search')?.value || '').toLowerCase();
@@ -3227,6 +3457,12 @@ async function saveUnloading() {
     const r = await call('saveUnloadingData', data);
     if (r && r.success) {
       toast('✅ Unloading saved!');
+      showSuccess('Unloading Saved', [
+        ['SO Number', _ulCurrentSO?.SO_Number || ''],
+        ['Lorry No', _ulCurrentSO?.Lorry_No || ''],
+        ['Unloading Date', date],
+        ['Status', 'Unloading Complete ✓']
+      ]);
       // Reset form
       const soSel = document.getElementById('ul-so');
       if (soSel) soSel.value = '';
@@ -3255,7 +3491,7 @@ async function renderProfit() {
 
   // Build dispatch summary table rows
   const dispSummaryRows = dispRows.length === 0
-    ? `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--ink3)">No dispatch records yet</td></tr>`
+    ? `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--ink3)">No dispatch records yet</td></tr>`
     : dispRows.map(r => `
         <tr>
           <td class="mono" style="font-weight:700;color:var(--blue)">${r.SO_Number || '–'}</td>
@@ -3264,6 +3500,7 @@ async function renderProfit() {
           <td class="mono" style="font-size:11px">${r.Eway_Bill_No || '–'}</td>
           <td style="font-size:11px">${r.PKGS || '–'} · ${r.Items || '–'}</td>
           <td class="mono text-right" style="font-weight:700;color:var(--blue)">${r.Final_MT ? fmtNum(r.Final_MT)+' MT' : '–'}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="editDispatch(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️</button></td>
         </tr>`).join('');
 
   setContent(`
@@ -3363,10 +3600,68 @@ async function renderProfit() {
         <button class="btn btn-primary" onclick="saveProfit()">💾 Save Profit Analysis</button>
       </div>
     </div>
+
+    <!-- ── SAVED PROFIT RECORDS ── -->
+    <div class="section-card" style="margin-top:16px">
+      <div class="section-title">
+        <span>📊 Saved Profit Records</span>
+        <button class="btn btn-outline btn-sm" onclick="loadProfitRecords(1)">↺ Refresh</button>
+      </div>
+      <div id="pf-records-wrap">
+        <div class="loading"><span class="spinner"></span>Loading…</div>
+      </div>
+    </div>
   `);
+
+  // load profit records immediately
+  loadProfitRecords(1);
 }
 
-async function onPFSOSelect() {
+async function loadProfitRecords(page) {
+  const wrap = document.getElementById('pf-records-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+  try {
+    const rows = await sb('profit_master','GET',null,'?order=created_at.desc&limit=25&offset='+((page-1)*25));
+    const countRes = await fetch(SUPABASE_URL + '/rest/v1/profit_master?select=count', {
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Prefer':'count=exact','Range':'0-0'}
+    });
+    const total = parseInt(countRes.headers.get('content-range')?.split('/')[1]||'0');
+    const totalPages = Math.max(1, Math.ceil(total/25));
+    if (!rows.length) { wrap.innerHTML = '<div class="loading" style="color:var(--ink3)">No profit records saved yet.</div>'; return; }
+    const trows = rows.map(r => `<tr>
+      <td class="mono" style="font-weight:700;color:var(--blue)">${r.so_number||'–'}</td>
+      <td class="mono">${r.mf_no||'–'}</td>
+      <td class="text-right mono">₹${fmt(r.bilti_freight)}</td>
+      <td class="text-right mono">₹${fmt(r.total_cost)}</td>
+      <td class="text-right mono" style="font-weight:700;color:${(r.gross_profit||0)>=0?'var(--green)':'var(--red)'}">₹${fmt(r.gross_profit)}</td>
+      <td class="text-right">${r.gp_on_sale||0}%</td>
+      <td>${r.ack_date||'–'}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="editProfitRecord(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ Edit</button></td>
+    </tr>`).join('');
+    wrap.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>SO No</th><th>MF No</th><th>Bilti Freight</th><th>Total Cost</th><th>Gross Profit</th><th>GP%</th><th>Ack Date</th><th>Action</th></tr></thead>
+      <tbody>${trows}</tbody>
+    </table></div>${renderPagination(page, totalPages, 'loadProfitRecords')}`;
+  } catch(e) { wrap.innerHTML = `<div class="loading" style="color:var(--red)">Error: ${e.message||e}</div>`; }
+}
+
+function editProfitRecord(r) {
+  openEditModal('Edit Profit: ' + (r.so_number||''), [
+    {id:'SO_Number',    label:'SO Number',      value:r.so_number||'',    readonly:true},
+    {id:'MF_No',        label:'MF No',          value:r.mf_no||'',        readonly:true},
+    {id:'Bilti_Freight',label:'Bilti Freight',  value:r.bilti_freight||0, type:'number'},
+    {id:'Extra_Chrg',   label:'Extra Charges',  value:r.extra_chrg||0,    type:'number'},
+    {id:'Total_Cost',   label:'Total Cost',     value:r.total_cost||0,    type:'number'},
+    {id:'Deduction',    label:'Deduction',      value:r.deduction||0,     type:'number'},
+    {id:'Ack_Date',     label:'Acknowledgment Date', value:r.ack_date||'', type:'date'}
+  ], async function(vals) {
+    await call('updateProfit', {...vals, SO_ID: r.so_id});
+    await loadProfitRecords(1);
+  });
+}
+
+async function onPFSOSelect() { // original closing brace placeholder
   const sel  = document.getElementById('pf-so');
   const soId = sel.value;
   if (!soId) return;
@@ -3441,12 +3736,23 @@ async function saveProfit() {
     Extra_Chrg: document.getElementById('pf-extra').value,
     Total_Cost: document.getElementById('pf-total-cost').value,
     Deduction: document.getElementById('pf-deduction').value,
-    Ack_Date: document.getElementById('pf-ack-date').value || null,
+    Ack_Date: document.getElementById('pf-ack-date')?.value || null,
     Created_By:(auth.user?auth.user.username:'admin')
   };
   try {
     const r = await call('saveProfitData', data);
-    if (r.success) { toast('Profit analysis saved!'); renderProfit(); }
+    if (r.success) {
+      toast('Profit analysis saved!');
+      showSuccess('Profit Analysis Saved', [
+        ['MF No', document.getElementById('pf-mf-no')?.value || ''],
+        ['Bilti Freight', '₹' + (parseFloat(document.getElementById('pf-bilti')?.value||0)).toLocaleString('en-IN')],
+        ['Total Cost', '₹' + (parseFloat(document.getElementById('pf-total-cost')?.value||0)).toLocaleString('en-IN')],
+        ['Gross Profit', '₹' + (parseFloat(document.getElementById('pf-gross')?.value||0)).toLocaleString('en-IN')],
+        ['GP on Sale', (document.getElementById('pf-gp-sale')?.value || '') + '%'],
+        ['Ack. Date', document.getElementById('pf-ack-date')?.value || '—']
+      ]);
+      renderProfit();
+    }
   } catch(e) { toast('Save failed: '+e,'error'); }
 }
 
@@ -3818,7 +4124,7 @@ function renderMasterTab(tab, page) {
 
   if (tab==='party') {
     const { items, pager, countInfo } = paginate(state.parties, 'party');
-    const rows = items.map(p => `<tr><td>${p.Party_ID}</td><td>${p.Party_Name}</td><td>${p.Contact||'–'}</td><td>${p.GST||'–'}</td><td><span class="badge b-yes">${p.Status}</span></td></tr>`).join('');
+    const rows = items.map((p,i) => `<tr><td>${p.Party_ID}</td><td>${p.Party_Name}</td><td>${p.Contact||'–'}</td><td>${p.GST||'–'}</td><td><span class="badge b-yes">${p.Status}</span></td><td style="display:flex;gap:4px"><button class="btn btn-outline btn-sm" onclick="editParty(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>${auth.isAdmin()?`<button class="btn btn-sm" style="background:var(--red-lt);color:var(--red);border:none;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer" onclick="confirmDeleteMaster('party',${p.Party_ID},'${(p.Party_Name||'').replace(/'/g,'\\\'')}')" title="Delete">🗑</button>`:''}</td></tr>`).join('');
     container.innerHTML = `
       <div class="form-grid-2" style="margin-bottom:14px">
         <div class="form-group"><label>Party Name *</label><input type="text" id="m-party-name"></div>
@@ -3830,12 +4136,12 @@ function renderMasterTab(tab, page) {
         <button class="btn btn-primary btn-sm" onclick="addParty()">+ Add Party</button>
       </div>
       ${countInfo}
-      <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>GST</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="loading">No records</td></tr>'}</tbody></table></div>
+      <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>GST</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="loading">No records</td></tr>'}</tbody></table></div>
       ${pager}
     `;
   } else if (tab==='place') {
     const { items, pager, countInfo } = paginate(state.places, 'place');
-    const rows = items.map(p => `<tr><td>${p.Place_ID}</td><td>${p.Place_Name}</td><td>${p.State_Code||'–'}</td></tr>`).join('');
+    const rows = items.map((p,i) => `<tr><td>${p.Place_ID}</td><td>${p.Place_Name}</td><td>${p.State_Code||'–'}</td><td style="display:flex;gap:4px"><button class="btn btn-outline btn-sm" onclick="editPlace(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏️</button>${auth.isAdmin()?`<button class="btn btn-sm" style="background:var(--red-lt);color:var(--red);border:none;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer" onclick="confirmDeleteMaster('place',${p.Place_ID},'${(p.Place_Name||'').replace(/'/g,'\\\'')}')" title="Delete">🗑</button>`:''}</td></tr>`).join('');
     container.innerHTML = `
       <div class="form-grid-2" style="margin-bottom:14px">
         <div class="form-group"><label>Place Name *</label><input type="text" id="m-place-name"></div>
@@ -3845,12 +4151,12 @@ function renderMasterTab(tab, page) {
         <button class="btn btn-primary btn-sm" onclick="addPlace()">+ Add Place</button>
       </div>
       ${countInfo}
-      <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Place Name</th><th>State Code</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="loading">No records</td></tr>'}</tbody></table></div>
+      <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Place Name</th><th>State Code</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="loading">No records</td></tr>'}</tbody></table></div>
       ${pager}
     `;
   } else if (tab==='broker') {
     const { items, pager, countInfo } = paginate(state.brokers, 'broker');
-    const rows = items.map(b => `<tr><td>${b.Broker_ID}</td><td>${b.Broker_Name}</td><td>${b.Contact_No||'–'}</td><td class="mono">${b.Primary_Acc_No||'–'}</td><td class="mono">${b.IFSC||'–'}</td><td><span class="badge b-yes">${b.Status}</span></td></tr>`).join('');
+    const rows = items.map((b,i) => `<tr><td>${b.Broker_ID}</td><td>${b.Broker_Name}</td><td>${b.Contact_No||'–'}</td><td class="mono">${b.Primary_Acc_No||'–'}</td><td class="mono">${b.IFSC||'–'}</td><td><span class="badge b-yes">${b.Status}</span></td><td style="display:flex;gap:4px"><button class="btn btn-outline btn-sm" onclick="editBroker(${JSON.stringify(b).replace(/"/g,'&quot;')})">✏️</button>${auth.isAdmin()?`<button class="btn btn-sm" style="background:var(--red-lt);color:var(--red);border:none;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer" onclick="confirmDeleteMaster('broker',${b.Broker_ID},'${(b.Broker_Name||'').replace(/'/g,'\\\'')}')" title="Delete">🗑</button>`:''}</td></tr>`).join('');
     container.innerHTML = `
       <div class="form-grid-2" style="margin-bottom:14px">
         <div class="form-group"><label>Broker Name *</label><input type="text" id="m-broker-name"></div>
@@ -3865,10 +4171,117 @@ function renderMasterTab(tab, page) {
         <button class="btn btn-primary btn-sm" onclick="addBroker()">+ Add Broker</button>
       </div>
       ${countInfo}
-      <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Acc No</th><th>IFSC</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="loading">No records</td></tr>'}</tbody></table></div>
+      <div class="table-wrap mt-8"><table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Acc No</th><th>IFSC</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="7" class="loading">No records</td></tr>'}</tbody></table></div>
       ${pager}
     `;
   }
+}
+
+// ── UNIVERSAL EDIT MODAL ────────────────────────────────────
+// Opens a modal pre-filled with record data. Fields is array of
+// {id, label, type, value, readonly} objects. onSave is async fn.
+function openEditModal(title, fields, onSave) {
+  const old = document.getElementById('_edit_modal'); if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = '_edit_modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2500;display:flex;align-items:center;justify-content:center;padding:16px';
+  const fhtml = fields.map(f => {
+    const ro = f.readonly ? 'readonly style="background:var(--surface);cursor:not-allowed"' : '';
+    let inp;
+    if (f.type === 'select') {
+      inp = `<select id="em_${f.id}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px">${(f.options||[]).map(o=>`<option value="${o.v||o}" ${String(f.value)===String(o.v||o)?'selected':''}>${o.l||o}</option>`).join('')}</select>`;
+    } else if (f.type === 'textarea') {
+      inp = `<textarea id="em_${f.id}" rows="2" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical" ${ro}>${f.value||''}</textarea>`;
+    } else {
+      inp = `<input type="${f.type||'text'}" id="em_${f.id}" value="${String(f.value||'').replace(/"/g,'&quot;')}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px" ${ro}>`;
+    }
+    return `<div style="margin-bottom:10px"><label style="display:block;font-size:11px;font-weight:600;color:var(--ink2);margin-bottom:3px">${f.label}</label>${inp}</div>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:10px;padding:24px;width:520px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)">
+      <div style="font-size:14px;font-weight:700;color:var(--ink1);margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+        <span>✏️ ${title}</span>
+        <button onclick="document.getElementById('_edit_modal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--ink3)">×</button>
+      </div>
+      <div id="em_fields">${fhtml}</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+        <button class="btn btn-outline" onclick="document.getElementById('_edit_modal').remove()">Cancel</button>
+        <button class="btn btn-primary" id="em_save_btn" onclick="_emSave()">💾 Save Changes</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  window._emOnSave = onSave;
+  window._emFields = fields;
+}
+async function _emSave() {
+  const btn = document.getElementById('em_save_btn');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Saving...'; }
+  try {
+    const vals = {};
+    (window._emFields||[]).forEach(f => {
+      const el = document.getElementById('em_'+f.id);
+      if (el) vals[f.id] = el.value;
+    });
+    await window._emOnSave(vals);
+    document.getElementById('_edit_modal')?.remove();
+    toast('Record updated ✓');
+  } catch(e) {
+    toast('Update failed: '+e,'error');
+    if (btn) { btn.disabled=false; btn.textContent='💾 Save Changes'; }
+  }
+}
+
+function confirmDeleteMaster(type, id, name) {
+  const labels = { party:'Party', place:'Place', broker:'Broker' };
+  confirmDelete(
+    `Delete ${labels[type]||type}: "${name}"`,
+    `This will permanently remove this ${labels[type]||type} from the master list. Any linked records (SOs, Trips) will retain the reference but the master entry will be gone.`,
+    async function() {
+      try {
+        const fnMap = { party:'deleteParty', place:'deletePlace', broker:'deleteBroker' };
+        await call(fnMap[type], id);
+        toast(`${labels[type]} deleted ✓`);
+        await loadMasters(true);
+        renderMasterTab(type);
+      } catch(e) { toast('Delete failed: '+e,'error'); }
+    }
+  );
+}
+
+function editParty(p) {
+  openEditModal('Edit Party: ' + p.Party_Name, [
+    {id:'Party_Name', label:'Party Name *', value:p.Party_Name},
+    {id:'Contact',    label:'Contact',      value:p.Contact||''},
+    {id:'GST',        label:'GST',          value:p.GST||''},
+    {id:'Status',     label:'Status', type:'select', value:p.Status, options:[{v:'ACTIVE',l:'ACTIVE'},{v:'INACTIVE',l:'INACTIVE'}]}
+  ], async function(vals) {
+    await call('updateParty', {...vals, Party_ID: p.Party_ID});
+    await loadMasters(true); renderMasterTab('party');
+  });
+}
+function editPlace(p) {
+  openEditModal('Edit Place: ' + p.Place_Name, [
+    {id:'Place_Name',  label:'Place Name *', value:p.Place_Name},
+    {id:'State_Code',  label:'State Code',   value:p.State_Code||''}
+  ], async function(vals) {
+    await call('updatePlace', {...vals, Place_ID: p.Place_ID});
+    await loadMasters(true); renderMasterTab('place');
+  });
+}
+function editBroker(b) {
+  openEditModal('Edit Broker: ' + b.Broker_Name, [
+    {id:'Broker_Name',      label:'Broker Name *',   value:b.Broker_Name},
+    {id:'Contact_No',       label:'Contact No',      value:b.Contact_No||''},
+    {id:'Primary_Acc_No',   label:'Primary Acc No',  value:b.Primary_Acc_No||''},
+    {id:'IFSC',             label:'Primary IFSC',    value:b.IFSC||''},
+    {id:'Secondary_Acc_No', label:'Secondary Acc No',value:b.Secondary_Acc_No||''},
+    {id:'Secondary_IFSC',   label:'Secondary IFSC',  value:b.Secondary_IFSC||''},
+    {id:'Status',           label:'Status', type:'select', value:b.Status, options:[{v:'ACTIVE',l:'ACTIVE'},{v:'INACTIVE',l:'INACTIVE'}]}
+  ], async function(vals) {
+    await call('updateBroker', {...vals, Broker_ID: b.Broker_ID});
+    await loadMasters(true); renderMasterTab('broker');
+  });
 }
 
 async function addParty() {
@@ -4333,6 +4746,13 @@ async function submitAdvancePayment() {
     const r = await call('saveAdvancePayment', { ..._acctCurrentMF, Adv_Paid_Amount: amt, Adv_Txn_ID: txnId, Created_By: (auth.user?auth.user.username:'admin') });
     if (r && r.success) {
       toast('Advance payment saved! Balance card unlocked. ✅');
+      showSuccess('Advance Payment Saved', [
+        ['MF No', _acctCurrentMF.MF_No || ''],
+        ['Lorry No', _acctCurrentMF.Lorry_No || ''],
+        ['Advance Paid', '₹' + parseFloat(amt).toLocaleString('en-IN')],
+        ['Txn ID', txnId || '—'],
+        ['Balance Remaining', '₹' + parseFloat(_acctCurrentMF.Balance_Amount||0).toLocaleString('en-IN')]
+      ]);
       document.getElementById('adv-card-status').textContent = '✅ Adv Paid ₹'+fmt(amt);
       document.getElementById('adv-action-area').style.display = 'none';
       document.getElementById('adv-paid-badge').style.display  = 'block';
@@ -4358,6 +4778,13 @@ async function submitBalancePayment() {
     const r = await call('saveBalancePayment', { MF_No: _acctCurrentMF.MF_No, SO_ID: _acctCurrentMF.SO_ID||null, Bal_Paid_Amount: amt, Bal_Txn_ID: txnId });
     if (r && r.success) {
       toast('Balance paid! MF fully settled. ✅');
+      showSuccess('Balance Payment Saved — MF Fully Settled', [
+        ['MF No', _acctCurrentMF.MF_No || ''],
+        ['Lorry No', _acctCurrentMF.Lorry_No || ''],
+        ['Balance Paid', '₹' + parseFloat(amt).toLocaleString('en-IN')],
+        ['Txn ID', txnId || '—'],
+        ['Status', 'COMPLETED ✓']
+      ]);
       document.getElementById('bal-card-status').textContent = '✅ Bal Paid ₹'+fmt(amt);
       document.getElementById('bal-action-area').style.display = 'none';
       document.getElementById('bal-paid-badge').style.display  = 'block';
@@ -4703,20 +5130,20 @@ let _rptData       = [];
 let _rptFilters    = {};
 let _rptTab        = 'freight';
 let _rptPage       = 1;
-const _RPT_PAGE_SIZE = 50;
+const _RPT_PAGE_SIZE = 25;
 
 // Balance report pagination
 let _balData       = [];
 let _balPage       = 1;
-const _BAL_PAGE_SIZE = 50;
+const _BAL_PAGE_SIZE = 25;
 
 // Masters pagination
 let _masterPage    = { party: 1, place: 1, broker: 1 };
-const _MASTER_PAGE_SIZE = 30;
+const _MASTER_PAGE_SIZE = 25;
 
 // Unloading pagination
 let _ulPage        = 1;
-const _UL_PAGE_SIZE = 50;
+const _UL_PAGE_SIZE = 25;
 
 async function renderReport() {
   showLoading();
@@ -4898,8 +5325,6 @@ function getRptCols() {
       {l:'L/M',        f:r=>inr(r.LM),           rt:true, money:true},
       {l:'P/M',        f:r=>inr(r.PM),           rt:true, money:true},
       {l:'Freight MF', f:r=>inr(r.Freight_MF),   rt:true, money:true},
-      {l:'Loading Point', f:r=>str(r.Loading_Point)},
-      {l:'Loading Clerk', f:r=>str(r.Loading_Clerk)},
       {l:'MF No',      f:r=>str(r.MF_No),        mono:true}
     ],
     payment: [
@@ -4952,20 +5377,37 @@ function getRptCols() {
       {l:'Total Revenue',f:r=>inr(r.Total_Revenue),rt:true,money:true}
     ],
     profit: [
-      {l:'SO No',        f:r=>str(r.SO_Number),  mono:true, amber:true},
-      {l:'MF No',        f:r=>str(r.MF_No),      mono:true},
-      {l:'Lorry No',     f:r=>str(r.Lorry_No),   mono:true},
-      {l:'Consignee',    f:r=>str(r.Consignee)},
-      {l:'Final MT',     f:r=>num(r.Final_MT),   rt:true},
-      {l:'Party Rate',   f:r=>inr(r.Party_Rate), rt:true, money:true},
-      {l:'Lorry Rate',   f:r=>inr(r.Lorry_Rate), rt:true, money:true},
-      {l:'Margin/MT',    f:r=>inr(r.Margin_MT),  rt:true, money:true},
-      {l:'Bilti Freight',f:r=>inr(r.Bilti_Freight),rt:true,money:true},
-      {l:'Total Cost',   f:r=>inr(r.Total_Cost), rt:true, money:true},
-      {l:'Gross Profit', f:r=>{const v=parseFloat(r.Gross_Profit)||0;return`<span style="color:${v>=0?'var(--green)':'var(--red)'}">₹${v.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>`;}, rt:true},
-      {l:'GP on Sale',   f:r=>pct(r.GP_on_Sale), rt:true},
-      {l:'GP on Purch.', f:r=>pct(r.GP_on_Purchase),rt:true},
-      {l:'Ack. Date',    f:r=>str(r.Ack_Date)}
+      {l:'SO No',         f:r=>str(r.SO_Number),    mono:true, amber:true},
+      {l:'MF No',         f:r=>str(r.MF_No),        mono:true},
+      {l:'Lorry No',      f:r=>str(r.Lorry_No),     mono:true},
+      {l:'Consignee',     f:r=>str(r.Consignee)},
+      {l:'Final MT',      f:r=>num(r.Final_MT),     rt:true},
+      // ── Freight Calculation ──────────────────
+      {l:'PMT Rate',      f:r=>inr(r.PMT_Rate),     rt:true, money:true},
+      {l:'L/M',           f:r=>inr(r.LM),           rt:true, money:true},
+      {l:'P/M',           f:r=>inr(r.PM),           rt:true, money:true},
+      {l:'Freight MF',    f:r=>inr(r.Freight_MF),   rt:true, money:true},
+      // ── Expense Breakdown ────────────────────
+      {l:'Load Labour',   f:r=>inr(r.Loading_Labour),rt:true,money:true},
+      {l:'Fooding',       f:r=>inr(r.Fooding),      rt:true, money:true},
+      {l:'Con',           f:r=>inr(r.Con),           rt:true, money:true},
+      {l:'Unloading',     f:r=>inr(r.Unloading_Exp),rt:true, money:true},
+      {l:'Xerox',         f:r=>inr(r.Xerox),        rt:true, money:true},
+      {l:'Detention',     f:r=>inr(r.Detention),    rt:true, money:true},
+      {l:'Extra Point',   f:r=>inr(r.Extra_Point),  rt:true, money:true},
+      {l:'Other Chrg',    f:r=>inr(r.Other_Chrg),   rt:true, money:true},
+      {l:'Extra Labour',  f:r=>inr(r.Extra_Labour), rt:true, money:true},
+      // ── Totals ───────────────────────────────
+      {l:'Sub-Total Exp', f:r=>{
+        const v = (parseFloat(r.Loading_Labour)||0)+(parseFloat(r.Fooding)||0)+(parseFloat(r.Con)||0)+(parseFloat(r.Unloading_Exp)||0)+(parseFloat(r.Xerox)||0)+(parseFloat(r.Detention)||0)+(parseFloat(r.Extra_Point)||0)+(parseFloat(r.Other_Chrg)||0)+(parseFloat(r.Extra_Labour)||0);
+        return `<span style="font-weight:700;color:var(--amber)">₹${v.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>`;
+      }, rt:true},
+      {l:'Total Cost',    f:r=>`<span style="font-weight:700;color:var(--red)">₹${(parseFloat(r.Total_Cost)||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</span>`, rt:true},
+      // ── Profit ───────────────────────────────
+      {l:'Bilti Freight', f:r=>inr(r.Bilti_Freight), rt:true, money:true},
+      {l:'Gross Profit',  f:r=>{const v=parseFloat(r.Gross_Profit)||0;return`<span style="font-weight:700;color:${v>=0?'var(--green)':'var(--red)'}">₹${v.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>`;}, rt:true},
+      {l:'GP on Sale',    f:r=>pct(r.GP_on_Sale),   rt:true},
+      {l:'GP on Purch.',  f:r=>pct(r.GP_on_Purchase),rt:true}
     ],
     status: [
       {l:'SO No',     f:r=>str(r.SO_Number),  mono:true, amber:true},
@@ -5150,7 +5592,6 @@ async function doLogin() {
     if (auth.isAdmin()) {
       document.getElementById('nav-usermgmt').style.display = 'block';
     }
-    // Apply role-based nav visibility
     applyNavVisibility();
     document.getElementById('login-screen').style.display = 'none';
 
@@ -5163,32 +5604,18 @@ async function doLogin() {
   }
 }
 
+// ── ROLE-BASED NAV VISIBILITY ──────────────────────────────
 function applyNavVisibility() {
   if (!auth.user) return;
-  const role = auth.user.role;
-  // Map nav item onclick → page key
-  const navPages = [
-    'dashboard','sales','operations','dispatch','mf','unloading','profit',
-    'account','pipeline','eway-alerts','report','party-ledger','monthly-pl',
-    'broker-outstanding','masters','import'
-  ];
-  document.querySelectorAll('.nav-item').forEach(el => {
-    const onclick = el.getAttribute('onclick') || '';
-    const match = onclick.match(/navigate\('([^']+)'\)/);
-    if (match) {
-      const page = match[1];
-      el.style.display = auth.canAccess(page) ? '' : 'none';
-    }
-  });
-  // Show role badge in topbar
   const roleColors = { ADMIN:'#2563eb', OPERATIONS:'#059669', ACCOUNTS:'#d97706', REPORTS:'#7c3aed' };
-  const roleEl = document.getElementById('topbar-role-badge');
-  if (roleEl) {
-    roleEl.textContent = role;
-    roleEl.style.background = (roleColors[role]||'#6b7280') + '22';
-    roleEl.style.color = roleColors[role]||'#6b7280';
-    roleEl.style.display = 'inline-block';
-  }
+  const role = auth.user.role;
+  const col = roleColors[role] || '#6b7280';
+  document.querySelectorAll('.nav-item[onclick]').forEach(el => {
+    const m = (el.getAttribute('onclick')||'').match(/navigate\('([^']+)'\)/);
+    if (m) el.style.display = auth.canAccess(m[1]) ? '' : 'none';
+  });
+  const badge = document.getElementById('topbar-role-badge');
+  if (badge) { badge.textContent = role; badge.style.cssText = `display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;margin-left:4px`; }
 }
 
 function doLogout() {
@@ -5199,12 +5626,12 @@ function doLogout() {
   document.getElementById('login-password').value = '';
   document.getElementById('login-error').style.display   = 'none';
   document.getElementById('nav-usermgmt').style.display  = 'none';
-  const roleEl = document.getElementById('topbar-role-badge');
-  if (roleEl) roleEl.style.display = 'none';
   document.getElementById('topbar-avatar').textContent   = 'AD';
   document.getElementById('topbar-username').textContent = 'Admin';
-  // Restore all nav items to visible on logout
-  document.querySelectorAll('.nav-item').forEach(el => { el.style.display = ''; });
+  const badge = document.getElementById('topbar-role-badge');
+  if (badge) badge.style.display = 'none';
+  // Restore all nav items for next login
+  document.querySelectorAll('.nav-item').forEach(el => el.style.display = '');
 }
 
 // =============================================
@@ -5223,9 +5650,9 @@ async function renderUserMgmt() {
   try { users = await SB.getAllUsers(); } catch(e) { toast('Failed to load users: '+e.message,'error'); }
 
   var rows = users.map(function(u, idx) {
-    var roleColors = { ADMIN:'#2563eb', OPERATIONS:'#059669', ACCOUNTS:'#d97706', REPORTS:'#7c3aed', USER:'#6b7280' };
-    var roleColor = roleColors[u.role] || '#6b7280';
-    var roleBadge = '<span class="user-role-badge" style="background:'+roleColor+'22;color:'+roleColor+';border:1px solid '+roleColor+'44;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px">'+u.role+'</span>';
+    var roleBadge   = u.role==='ADMIN'
+      ? '<span class="user-role-badge urb-admin">ADMIN</span>'
+      : '<span class="user-role-badge urb-user">USER</span>';
     var statusBadge = u.status==='ACTIVE'
       ? '<span class="badge b-yes">ACTIVE</span>'
       : '<span class="badge b-no">INACTIVE</span>';
